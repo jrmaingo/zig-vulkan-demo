@@ -1,0 +1,5 @@
+Vulkan spec:
+https://www.khronos.org/registry/vulkan/specs/
+
+Tutorial:
+https://vkguide.dev
