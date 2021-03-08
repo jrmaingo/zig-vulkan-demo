@@ -14,6 +14,7 @@ pub fn build(b: *Builder) void {
     const exe = b.addExecutable("vulkan-guide", "src/main.zig");
     exe.linkLibC();
     exe.linkSystemLibrary("SDL2");
+    exe.linkSystemLibrary("vulkan");
     exe.setTarget(target);
     exe.setBuildMode(mode);
     exe.install();
