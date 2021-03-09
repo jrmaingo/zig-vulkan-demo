@@ -9,9 +9,16 @@ const c = @cImport({
 fn allocAligned(allocator: *std.mem.Allocator,
                 alignment: u29,
                 size: usize) std.mem.Allocator.Error![]align(1) u8 {
+    // TODO go up to 29
     return switch (alignment) {
-        1 => alignedAllocator1.alloc(allocator, size),
-        2 => alignedAllocator2.alloc(allocator, size),
+        1 << 0 => alignedAllocators[0].alloc(allocator, size),
+        1 << 1 => alignedAllocators[1].alloc(allocator, size),
+        1 << 2 => alignedAllocators[2].alloc(allocator, size),
+        1 << 3 => alignedAllocators[3].alloc(allocator, size),
+        1 << 4 => alignedAllocators[4].alloc(allocator, size),
+        1 << 5 => alignedAllocators[5].alloc(allocator, size),
+        1 << 6 => alignedAllocators[6].alloc(allocator, size),
+        1 << 7 => alignedAllocators[7].alloc(allocator, size),
         else => undefined,
     };
 }
@@ -22,6 +29,7 @@ const AlignedAllocator = struct {
     const allocType = u8;
     const exact = std.mem.Allocator.Exact.at_least;
 
+    // implictly cast to alignment of 1 since we use one fn signature for all alloc calls
     fn alloc(comptime self: AlignedAllocator,
              allocator: *std.mem.Allocator,
              size: usize) std.mem.Allocator.Error![]align(1) u8 {
@@ -29,8 +37,15 @@ const AlignedAllocator = struct {
     }
 };
 
-const alignedAllocator1 = comptime AlignedAllocator { .alignment = 1 << 0, };
-const alignedAllocator2 = comptime AlignedAllocator { .alignment = 1 << 1, };
+// this generates structs for all possible alignment values
+const alignedAllocators = init: {
+    const count = 29;   // since alignment is u29
+    var values: [count]AlignedAllocator = undefined;
+    for (values) |*value, i| {
+        value.* = AlignedAllocator { .alignment = 1 << i };
+    }
+    break :init values;
+};
 
 // TODO actually use allocationScope
 fn vkAllocate(pUserData: ?*c_void,
