@@ -7,41 +7,22 @@ const c = @cImport({
 // TODO hack to get around comptime alignment for now
 // https://github.com/ziglang/zig/issues/7172
 fn allocAligned(allocator: *std.mem.Allocator, alignment: u29, size: usize) std.mem.Allocator.Error![]align(1) u8 {
-    // TODO go up to 29
-    return switch (alignment) {
-        1 << 0 => alignedAllocators[0].alloc(allocator, size),
-        1 << 1 => alignedAllocators[1].alloc(allocator, size),
-        1 << 2 => alignedAllocators[2].alloc(allocator, size),
-        1 << 3 => alignedAllocators[3].alloc(allocator, size),
-        1 << 4 => alignedAllocators[4].alloc(allocator, size),
-        1 << 5 => alignedAllocators[5].alloc(allocator, size),
-        1 << 6 => alignedAllocators[6].alloc(allocator, size),
-        1 << 7 => alignedAllocators[7].alloc(allocator, size),
-        else => undefined,
-    };
-}
-
-const AlignedAllocator = struct {
-    alignment: u29,
-
     const allocType = u8;
     const exact = std.mem.Allocator.Exact.at_least;
 
-    // implictly cast to alignment of 1 since we use one fn signature for all alloc calls
-    fn alloc(comptime self: AlignedAllocator, allocator: *std.mem.Allocator, size: usize) std.mem.Allocator.Error![]align(1) u8 {
-        return allocator.allocAdvanced(allocType, self.alignment, size, exact);
-    }
-};
-
-// this generates structs for all possible alignment values
-const alignedAllocators = init: {
-    const count = 29; // since alignment is u29
-    var values: [count]AlignedAllocator = undefined;
-    for (values) |*value, i| {
-        value.* = AlignedAllocator{ .alignment = 1 << i };
-    }
-    break :init values;
-};
+    // TODO go up to 29
+    return switch (alignment) {
+        1 << 0 => allocator.allocAdvanced(allocType, 1 << 0, size, exact),
+        1 << 1 => allocator.allocAdvanced(allocType, 1 << 1, size, exact),
+        1 << 2 => allocator.allocAdvanced(allocType, 1 << 2, size, exact),
+        1 << 3 => allocator.allocAdvanced(allocType, 1 << 3, size, exact),
+        1 << 4 => allocator.allocAdvanced(allocType, 1 << 4, size, exact),
+        1 << 5 => allocator.allocAdvanced(allocType, 1 << 5, size, exact),
+        1 << 6 => allocator.allocAdvanced(allocType, 1 << 6, size, exact),
+        1 << 7 => allocator.allocAdvanced(allocType, 1 << 7, size, exact),
+        else => undefined,
+    };
+}
 
 // TODO actually use allocationScope
 fn vkAllocate(pUserData: ?*c_void, size: usize, alignment: usize, allocationScope: c.VkSystemAllocationScope) callconv(.C) ?*c_void {
