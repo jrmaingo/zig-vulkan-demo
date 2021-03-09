@@ -10,18 +10,13 @@ fn allocAligned(allocator: *std.mem.Allocator, alignment: u29, size: usize) std.
     const allocType = u8;
     const exact = std.mem.Allocator.Exact.at_least;
 
-    // TODO go up to 29
-    return switch (alignment) {
-        1 << 0 => allocator.allocAdvanced(allocType, 1 << 0, size, exact),
-        1 << 1 => allocator.allocAdvanced(allocType, 1 << 1, size, exact),
-        1 << 2 => allocator.allocAdvanced(allocType, 1 << 2, size, exact),
-        1 << 3 => allocator.allocAdvanced(allocType, 1 << 3, size, exact),
-        1 << 4 => allocator.allocAdvanced(allocType, 1 << 4, size, exact),
-        1 << 5 => allocator.allocAdvanced(allocType, 1 << 5, size, exact),
-        1 << 6 => allocator.allocAdvanced(allocType, 1 << 6, size, exact),
-        1 << 7 => allocator.allocAdvanced(allocType, 1 << 7, size, exact),
-        else => undefined,
-    };
+    comptime var i = 0;
+    while (i < 29) : (i += 1) {
+        if (alignment == (1 << i)) {
+            return allocator.allocAdvanced(allocType, 1 << i, size, exact);
+        }
+    }
+    unreachable;
 }
 
 // TODO actually use allocationScope
