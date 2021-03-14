@@ -135,18 +135,29 @@ pub fn main() anyerror!void {
         .pfnInternalFree = null,
     };
 
-    //    var vkInstance = c.VkInstance {};
-    //    const res = c.vkCreateInstance(createInfo, vkAllocator, vkInstance);
-    //    defer c.vkDestroyInstance(vkInstance, vkAllocator);
-    //    if (res != 0) {
-    //        std.log.error("init failed!", .{});
-    //    }
-
     var version: u32 = 0;
-    const res = c.vkEnumerateInstanceVersion(&version);
+    var res = c.vkEnumerateInstanceVersion(&version);
     if (res != c.VkResult.VK_SUCCESS) {
         std.log.err("enumerate instance version error {}", .{res});
     } else {
         std.log.info("version: {}.{}.{}", .{ VK_VERSION_MAJOR(version), VK_VERSION_MINOR(version), VK_VERSION_PATCH(version) });
+    }
+
+    const vkInstanceCreateInfo = c.VkInstanceCreateInfo{
+        .sType = c.VkStructureType.VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+        .pNext = null,
+        .flags = 0,
+        .pApplicationInfo = null,
+        .enabledLayerCount = 0,
+        .ppEnabledLayerNames = null,
+        .enabledExtensionCount = 0,
+        .ppEnabledExtensionNames = null,
+    };
+
+    var vkInstance: c.VkInstance = undefined;
+    res = c.vkCreateInstance(&vkInstanceCreateInfo, &vkAllocationCallbacks, &vkInstance);
+    defer c.vkDestroyInstance(vkInstance, &vkAllocationCallbacks);
+    if (res != c.VkResult.VK_SUCCESS) {
+        std.log.err("init failed! {}", .{res});
     }
 }
