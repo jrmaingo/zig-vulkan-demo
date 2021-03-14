@@ -4,15 +4,14 @@ const c = @cImport({
     @cInclude("vulkan/vulkan.h");
 });
 
-const allocType = u8;
-const exact = std.mem.Allocator.Exact.at_least;
-
-const LenMap = std.AutoHashMap([*]u8, usize);
-
 const VkAllocator = struct {
     allocator: *std.mem.Allocator,
     // maps addr to len
     len_map: LenMap,
+
+    const allocType = u8;
+    const exact = std.mem.Allocator.Exact.at_least;
+    const LenMap = std.AutoHashMap([*]u8, usize);
 
     fn init(allocator: *std.mem.Allocator) VkAllocator {
         return VkAllocator{
@@ -75,17 +74,13 @@ fn vkAllocate(pUserData: ?*c_void, size: usize, alignment: usize, allocationScop
         return null;
     }
 
-    if (pUserData) |justUserData| {
-        var allocator = @ptrCast(*VkAllocator, @alignCast(8, justUserData));
-        if (allocator.allocAligned(@truncate(u29, alignment), size)) |res| {
-            return @as(*c_void, res.ptr);
-        } else |err| {
-            std.log.err("alloc error {}", .{err});
-        }
-    } else {
-        std.log.err("allocator missing", .{});
+    var allocator = @ptrCast(*VkAllocator, @alignCast(8, pUserData.?));
+    if (allocator.allocAligned(@truncate(u29, alignment), size)) |res| {
+        return @as(*c_void, res.ptr);
+    } else |err| {
+        std.log.err("alloc error {}", .{err});
+        return null;
     }
-    return null;
 }
 
 fn vkReallocate(pUserData: ?*c_void, pOriginal: ?*c_void, size: usize, alignment: usize, allocationScope: c.VkSystemAllocationScope) callconv(.C) ?*c_void {
@@ -95,20 +90,16 @@ fn vkReallocate(pUserData: ?*c_void, pOriginal: ?*c_void, size: usize, alignment
     }
 
     if (pOriginal) |justOriginal| {
-        if (pUserData) |justUserData| {
-            var allocator = @ptrCast(*VkAllocator, @alignCast(8, justUserData));
-            if (allocator.reallocAligned(@ptrCast([*]u8, justOriginal), @truncate(u29, alignment), size)) |res| {
-                return @as(*c_void, res.ptr);
-            } else |err| {
-                std.log.err("alloc error {}", .{err});
-            }
-        } else {
-            std.log.err("allocator missing", .{});
+        var allocator = @ptrCast(*VkAllocator, @alignCast(8, pUserData.?));
+        if (allocator.reallocAligned(@ptrCast([*]u8, justOriginal), @truncate(u29, alignment), size)) |res| {
+            return @as(*c_void, res.ptr);
+        } else |err| {
+            std.log.err("alloc error {}", .{err});
+            return null;
         }
     } else {
         return vkAllocate(pUserData, size, alignment, allocationScope);
     }
-    return null;
 }
 
 fn vkFree(pUserData: ?*c_void, pMemory: ?*c_void) callconv(.C) void {
