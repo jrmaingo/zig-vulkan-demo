@@ -24,7 +24,7 @@ const VkAllocator = struct {
     // TODO hack to get around comptime alignment for now
     // https://github.com/ziglang/zig/issues/7172
     fn allocAligned(self: *VkAllocator, alignment: u29, size: usize) std.mem.Allocator.Error![]align(1) u8 {
-        // TODO handle size 0
+        std.debug.assert(size != 0);
         comptime var i = 0;
         while (i < 29) : (i += 1) {
             if (alignment == (1 << i)) {
@@ -41,10 +41,10 @@ const VkAllocator = struct {
     }
 
     fn reallocAligned(self: *VkAllocator, original: [*]u8, alignment: u29, size: usize) std.mem.Allocator.Error![]align(1) u8 {
-        // TODO ensure old alignment == new alignment
-        // TODO handle 0 len
-        const len = self.len_map.get(original) orelse 0;
-        std.debug.assert(len != 0);
+        std.debug.assert(size != 0);
+        const len = self.len_map.get(original).?;
+        const old_alignment = @typeInfo(@TypeOf(original)).Pointer.alignment;
+        std.debug.assert(old_alignment >= alignment);
         var sizedOrignal = original[0..len];
         comptime var i = 0;
         while (i < 29) : (i += 1) {
@@ -60,10 +60,21 @@ const VkAllocator = struct {
         }
         unreachable;
     }
+
+    fn free(self: *VkAllocator, memory: [*]u8) void {
+        const len = self.len_map.get(memory).?;
+        var sizedMemory = memory[0..len];
+        self.allocator.free(sizedMemory);
+        _ = self.len_map.remove(memory);
+    }
 };
 
 // TODO actually use allocationScope
 fn vkAllocate(pUserData: ?*c_void, size: usize, alignment: usize, allocationScope: c.VkSystemAllocationScope) callconv(.C) ?*c_void {
+    if (size == 0) {
+        return null;
+    }
+
     if (pUserData) |justUserData| {
         var allocator = @ptrCast(*VkAllocator, @alignCast(8, justUserData));
         if (allocator.allocAligned(@truncate(u29, alignment), size)) |res| {
@@ -78,7 +89,11 @@ fn vkAllocate(pUserData: ?*c_void, size: usize, alignment: usize, allocationScop
 }
 
 fn vkReallocate(pUserData: ?*c_void, pOriginal: ?*c_void, size: usize, alignment: usize, allocationScope: c.VkSystemAllocationScope) callconv(.C) ?*c_void {
-    // TODO size 0 means free
+    if (size == 0) {
+        vkFree(pUserData, pOriginal);
+        return null;
+    }
+
     if (pOriginal) |justOriginal| {
         if (pUserData) |justUserData| {
             var allocator = @ptrCast(*VkAllocator, @alignCast(8, justUserData));
@@ -96,20 +111,25 @@ fn vkReallocate(pUserData: ?*c_void, pOriginal: ?*c_void, size: usize, alignment
     return null;
 }
 
+fn vkFree(pUserData: ?*c_void, pMemory: ?*c_void) callconv(.C) void {
+    const justMemory = pMemory orelse return;
+    var allocator = @ptrCast(*VkAllocator, @alignCast(8, pUserData.?));
+    allocator.free(@ptrCast([*]u8, justMemory));
+}
+
 pub fn main() anyerror!void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
     var vkAllocator = VkAllocator.init(&arena.allocator);
 
-    // TODO rest of allocator
     const vkAllocationCallbacks = c.VkAllocationCallbacks{
         .pUserData = &vkAllocator,
         .pfnAllocation = vkAllocate,
         .pfnReallocation = vkReallocate,
-        .pfnFree = undefined,
-        .pfnInternalAllocation = undefined,
-        .pfnInternalFree = undefined,
+        .pfnFree = vkFree,
+        .pfnInternalAllocation = null,
+        .pfnInternalFree = null,
     };
 
     //    var vkInstance = c.VkInstance {};
