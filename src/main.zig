@@ -11,7 +11,12 @@ const VkAllocator = struct {
 
     const allocType = u8;
     const exact = std.mem.Allocator.Exact.at_least;
-    const LenMap = std.AutoHashMap([*]u8, usize);
+    const LenMap = std.AutoHashMap([*]u8, AllocData);
+
+    const AllocData = struct {
+        size: usize,
+        alignment: u29,
+    };
 
     fn init(allocator: *std.mem.Allocator) VkAllocator {
         return VkAllocator{
@@ -25,13 +30,14 @@ const VkAllocator = struct {
     fn allocAligned(self: *VkAllocator, alignment: u29, size: usize) std.mem.Allocator.Error![]align(1) u8 {
         std.debug.assert(size != 0);
         comptime var i = 0;
-        while (i < 29) : (i += 1) {
+        inline while (i < 29) : (i += 1) {
+            // std.log.info("alloc i: {}", .{i});
             if (alignment == (1 << i)) {
                 var res = try self.allocator.allocAdvanced(allocType, 1 << i, size, exact);
                 errdefer self.allocator.free(res);
 
                 // store addr->len mapping on successful allocation
-                try self.len_map.put(res.ptr, size);
+                try self.len_map.put(res.ptr, .{ .size = size, .alignment = alignment });
 
                 return res;
             }
@@ -41,18 +47,18 @@ const VkAllocator = struct {
 
     fn reallocAligned(self: *VkAllocator, original: [*]u8, alignment: u29, size: usize) std.mem.Allocator.Error![]align(1) u8 {
         std.debug.assert(size != 0);
-        const len = self.len_map.get(original).?;
-        const old_alignment = @typeInfo(@TypeOf(original)).Pointer.alignment;
-        std.debug.assert(old_alignment >= alignment);
-        var sizedOrignal = original[0..len];
+        const allocData = self.len_map.get(original).?;
+        std.debug.assert(allocData.alignment >= alignment);
+        var sizedOrignal = original[0..allocData.size];
         comptime var i = 0;
-        while (i < 29) : (i += 1) {
+        inline while (i < 29) : (i += 1) {
+            // std.log.info("realloc i: {}", .{i});
             if (alignment == (1 << i)) {
                 var res = try self.allocator.reallocAdvanced(sizedOrignal, 1 << i, size, exact);
                 errdefer self.allocator.free(res);
 
                 // update addr->len mapping on successful reallocation
-                try self.len_map.put(res.ptr, size);
+                try self.len_map.put(res.ptr, .{ .size = size, .alignment = alignment });
 
                 return res;
             }
@@ -61,8 +67,8 @@ const VkAllocator = struct {
     }
 
     fn free(self: *VkAllocator, memory: [*]u8) void {
-        const len = self.len_map.get(memory).?;
-        var sizedMemory = memory[0..len];
+        const allocData = self.len_map.get(memory).?;
+        var sizedMemory = memory[0..allocData.size];
         self.allocator.free(sizedMemory);
         _ = self.len_map.remove(memory);
     }
@@ -160,4 +166,18 @@ pub fn main() anyerror!void {
     if (res != c.VkResult.VK_SUCCESS) {
         std.log.err("init failed! {}", .{res});
     }
+}
+
+test "allocate, realloc and free" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    var vkAllocator = VkAllocator.init(&arena.allocator);
+    const userData = @as(?*c_void, &vkAllocator);
+
+    var mem = vkAllocate(userData, @sizeOf(u32), 8, c.VkSystemAllocationScope.VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE).?;
+
+    mem = vkReallocate(userData, mem, @sizeOf(u64), 8, c.VkSystemAllocationScope.VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE).?;
+
+    vkFree(userData, mem);
 }
