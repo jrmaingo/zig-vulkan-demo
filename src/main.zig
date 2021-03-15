@@ -126,6 +126,8 @@ pub inline fn VK_VERSION_PATCH(version: anytype) u32 {
     return (@import("std").meta.cast(u32, version)) & 0xfff;
 }
 
+const SDLError = error{Unknown};
+
 pub fn main() anyerror!void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
@@ -165,6 +167,36 @@ pub fn main() anyerror!void {
     defer c.vkDestroyInstance(vkInstance, &vkAllocationCallbacks);
     if (res != c.VkResult.VK_SUCCESS) {
         std.log.err("init failed! {}", .{res});
+    }
+
+    var res_int = c.SDL_Init(c.SDL_INIT_VIDEO);
+    if (res_int != 0) {
+        return SDLError.Unknown;
+    }
+    var window = c.SDL_CreateWindow("vulkan-zig-demo", c.SDL_WINDOWPOS_CENTERED, c.SDL_WINDOWPOS_CENTERED, 1280, 720, c.SDL_WINDOW_VULKAN);
+    defer c.SDL_DestroyWindow(window);
+
+    return mainLoop();
+}
+
+fn draw() void {
+    // TODO
+}
+
+fn mainLoop() anyerror!void {
+    while (true) {
+        var event: c.SDL_Event = undefined;
+        if (c.SDL_PollEvent(&event) == 1) {
+            switch (event.type) {
+                c.SDL_QUIT => return,
+                else => {
+                    // std.log.info("unhandled event type {}", .{event.type});
+                    continue;
+                },
+            }
+        }
+
+        draw();
     }
 }
 
