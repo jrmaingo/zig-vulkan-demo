@@ -25,6 +25,17 @@ const VkAllocator = struct {
         };
     }
 
+    fn getCallbacks(self: *VkAllocator) c.VkAllocationCallbacks {
+        return c.VkAllocationCallbacks{
+            .pUserData = self,
+            .pfnAllocation = vkAllocate,
+            .pfnReallocation = vkReallocate,
+            .pfnFree = vkFree,
+            .pfnInternalAllocation = null,
+            .pfnInternalFree = null,
+        };
+    }
+
     // TODO hack to get around comptime alignment for now
     // https://github.com/ziglang/zig/issues/7172
     fn allocAligned(self: *VkAllocator, alignment: u29, size: usize) std.mem.Allocator.Error![]align(1) u8 {
@@ -126,23 +137,7 @@ pub inline fn VK_VERSION_PATCH(version: anytype) u32 {
     return (@import("std").meta.cast(u32, version)) & 0xfff;
 }
 
-const SDLError = error{Unknown};
-
-pub fn main() anyerror!void {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-
-    var vkAllocator = VkAllocator.init(&arena.allocator);
-
-    const vkAllocationCallbacks = c.VkAllocationCallbacks{
-        .pUserData = &vkAllocator,
-        .pfnAllocation = vkAllocate,
-        .pfnReallocation = vkReallocate,
-        .pfnFree = vkFree,
-        .pfnInternalAllocation = null,
-        .pfnInternalFree = null,
-    };
-
+fn vkPrintVersion() void {
     var version: u32 = 0;
     var res = c.vkEnumerateInstanceVersion(&version);
     if (res != c.VkResult.VK_SUCCESS) {
@@ -150,7 +145,14 @@ pub fn main() anyerror!void {
     } else {
         std.log.info("version: {}.{}.{}", .{ VK_VERSION_MAJOR(version), VK_VERSION_MINOR(version), VK_VERSION_PATCH(version) });
     }
+}
 
+const MyError = error{
+    UnknownSDL,
+    UnknownVk,
+};
+
+fn vkInit(vkAllocator: *VkAllocator) anyerror!c.VkInstance {
     const vkInstanceCreateInfo = c.VkInstanceCreateInfo{
         .sType = c.VkStructureType.VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
         .pNext = null,
@@ -162,16 +164,33 @@ pub fn main() anyerror!void {
         .ppEnabledExtensionNames = null,
     };
 
+    const vkAllocationCallbacks = vkAllocator.getCallbacks();
     var vkInstance: c.VkInstance = undefined;
-    res = c.vkCreateInstance(&vkInstanceCreateInfo, &vkAllocationCallbacks, &vkInstance);
-    defer c.vkDestroyInstance(vkInstance, &vkAllocationCallbacks);
+    const res = c.vkCreateInstance(&vkInstanceCreateInfo, &vkAllocationCallbacks, &vkInstance);
     if (res != c.VkResult.VK_SUCCESS) {
         std.log.err("init failed! {}", .{res});
+        return MyError.UnknownVk;
+    } else {
+        return vkInstance;
+    }
+}
+
+pub fn main() anyerror!void {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    vkPrintVersion();
+
+    var vkAllocator = VkAllocator.init(&arena.allocator);
+    var vkInstance = try vkInit(&vkAllocator);
+    defer {
+        const vkAllocationCallbacks = vkAllocator.getCallbacks();
+        c.vkDestroyInstance(vkInstance, &vkAllocationCallbacks);
     }
 
     var res_int = c.SDL_Init(c.SDL_INIT_VIDEO);
     if (res_int != 0) {
-        return SDLError.Unknown;
+        return MyError.UnknownSDL;
     }
     var window = c.SDL_CreateWindow("vulkan-zig-demo", c.SDL_WINDOWPOS_CENTERED, c.SDL_WINDOWPOS_CENTERED, 1280, 720, c.SDL_WINDOW_VULKAN);
     defer c.SDL_DestroyWindow(window);
