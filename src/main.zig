@@ -164,6 +164,10 @@ fn vkInit(vkAllocator: *VkAllocator) anyerror!c.VkInstance {
         .apiVersion = c.VK_MAKE_VERSION(1, 2, 0),
     };
 
+    const c_str_lit = [*:0]const u8;
+    const debugUtilsName = @as(c_str_lit, c.VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+    const extensionNames = [_]c_str_lit{debugUtilsName};
+
     const vkInstanceCreateInfo = c.VkInstanceCreateInfo{
         .sType = c.VkStructureType.VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
         .pNext = null,
@@ -171,8 +175,8 @@ fn vkInit(vkAllocator: *VkAllocator) anyerror!c.VkInstance {
         .pApplicationInfo = &vkApplicationInfo,
         .enabledLayerCount = 0,
         .ppEnabledLayerNames = null,
-        .enabledExtensionCount = 0,
-        .ppEnabledExtensionNames = null,
+        .enabledExtensionCount = 1,
+        .ppEnabledExtensionNames = &extensionNames,
     };
 
     const vkAllocationCallbacks = vkAllocator.getCallbacks();
@@ -186,6 +190,51 @@ fn vkInit(vkAllocator: *VkAllocator) anyerror!c.VkInstance {
     }
 }
 
+fn vkMessengerCallback(messageSeverity: c.VkDebugUtilsMessageSeverityFlagBitsEXT, messageType: c.VkDebugUtilsMessageTypeFlagsEXT, pCallbackData: ?*const c.VkDebugUtilsMessengerCallbackDataEXT, pUserData: ?*c_void) callconv(.C) c.VkBool32 {
+    if (pCallbackData == null) {
+        std.log.err("no data to log", .{});
+        return c.VK_FALSE;
+    }
+
+    const message = pCallbackData.?.pMessage;
+    if (message == null) {
+        std.log.err("empty message", .{});
+        return c.VK_FALSE;
+    }
+
+    std.log.warn("[{}] [{}] {}", .{ messageSeverity, messageType, message });
+    return c.VK_FALSE;
+}
+
+fn vkLogInit(vkInstance: *c.VkInstance, vkAllocator: *VkAllocator) anyerror!c.VkDebugUtilsMessengerEXT {
+    const procAddr = c.vkGetInstanceProcAddr(vkInstance.*, "vkCreateDebugUtilsMessengerEXT");
+    if (procAddr == null) {
+        return MyError.UnknownVk;
+    }
+    const createMessenger = @ptrCast(c.PFN_vkCreateDebugUtilsMessengerEXT, procAddr).?;
+
+    const messageSeverity = @enumToInt(c.VkDebugUtilsMessageSeverityFlagBitsEXT.VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) | @enumToInt(c.VkDebugUtilsMessageSeverityFlagBitsEXT.VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT);
+    const messageType = @enumToInt(c.VkDebugUtilsMessageTypeFlagBitsEXT.VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT) | @enumToInt(c.VkDebugUtilsMessageTypeFlagBitsEXT.VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT) | @enumToInt(c.VkDebugUtilsMessageTypeFlagBitsEXT.VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT);
+    const createInfo = c.VkDebugUtilsMessengerCreateInfoEXT{
+        .sType = c.VkStructureType.VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
+        .pNext = null,
+        .flags = 0,
+        .messageSeverity = messageSeverity,
+        .messageType = messageType,
+        .pfnUserCallback = vkMessengerCallback,
+        .pUserData = null,
+    };
+
+    const vkAllocationCallbacks = vkAllocator.getCallbacks();
+    var messenger: c.VkDebugUtilsMessengerEXT = null;
+    const res = createMessenger(vkInstance.*, &createInfo, &vkAllocationCallbacks, &messenger);
+    if (res != c.VkResult.VK_SUCCESS) {
+        return MyError.UnknownVk;
+    }
+
+    return messenger;
+}
+
 pub fn main() anyerror!void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
@@ -193,10 +242,15 @@ pub fn main() anyerror!void {
     vkPrintVersion();
 
     var vkAllocator = VkAllocator.init(&arena.allocator);
+    const vkAllocationCallbacks = vkAllocator.getCallbacks();
     var vkInstance = try vkInit(&vkAllocator);
+    defer c.vkDestroyInstance(vkInstance, &vkAllocationCallbacks);
+
+    var vkMessenger = try vkLogInit(&vkInstance, &vkAllocator);
     defer {
-        const vkAllocationCallbacks = vkAllocator.getCallbacks();
-        c.vkDestroyInstance(vkInstance, &vkAllocationCallbacks);
+        const procAddr = c.vkGetInstanceProcAddr(vkInstance, "vkDestroyDebugUtilsMessengerEXT");
+        const destroyMessenger = @ptrCast(c.PFN_vkDestroyDebugUtilsMessengerEXT, procAddr).?;
+        destroyMessenger(vkInstance, vkMessenger, &vkAllocationCallbacks);
     }
 
     var res_int = c.SDL_Init(c.SDL_INIT_VIDEO);
