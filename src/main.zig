@@ -153,11 +153,22 @@ const MyError = error{
 };
 
 fn vkInit(vkAllocator: *VkAllocator) anyerror!c.VkInstance {
+    const vkApplicationInfo = c.VkApplicationInfo{
+        .sType = c.VkStructureType.VK_STRUCTURE_TYPE_APPLICATION_INFO,
+        .pNext = null,
+        // .flags = 0,
+        .pApplicationName = "Demo",
+        .applicationVersion = 1,
+        .pEngineName = null,
+        .engineVersion = 0,
+        .apiVersion = c.VK_MAKE_VERSION(1, 2, 0),
+    };
+
     const vkInstanceCreateInfo = c.VkInstanceCreateInfo{
         .sType = c.VkStructureType.VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
         .pNext = null,
         .flags = 0,
-        .pApplicationInfo = null,
+        .pApplicationInfo = &vkApplicationInfo,
         .enabledLayerCount = 0,
         .ppEnabledLayerNames = null,
         .enabledExtensionCount = 0,
