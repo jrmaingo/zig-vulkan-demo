@@ -8,6 +8,7 @@ const VkAllocator = struct {
     allocator: *std.mem.Allocator,
     // maps addr to len
     len_map: LenMap,
+    tracing: bool = false,
 
     const allocType = u8;
     const exact = std.mem.Allocator.Exact.at_least;
@@ -53,6 +54,9 @@ const VkAllocator = struct {
 
                 // store addr->len mapping on successful allocation
                 try self.len_map.put(res.ptr, .{ .size = size, .alignment = alignment });
+                if (self.tracing) {
+                    std.log.err("alloc {} at {}", .{ size, res.ptr });
+                }
 
                 return res;
             }
@@ -74,6 +78,9 @@ const VkAllocator = struct {
 
                 // update addr->len mapping on successful reallocation
                 try self.len_map.put(res.ptr, .{ .size = size, .alignment = alignment });
+                if (self.tracing) {
+                    std.log.err("realloc {} at {}", .{ size, res.ptr });
+                }
 
                 return res;
             }
@@ -82,10 +89,18 @@ const VkAllocator = struct {
     }
 
     fn free(self: *VkAllocator, memory: [*]u8) void {
+        if (self.tracing) {
+            std.log.err("freeing {}, capacity {}", .{ memory, self.len_map.capacity() });
+        }
         const allocData = self.len_map.get(memory).?;
+        if (self.tracing) {
+            std.log.err("with len {}", .{allocData.size});
+        }
         var sizedMemory = memory[0..allocData.size];
         self.allocator.free(sizedMemory);
-        _ = self.len_map.remove(memory);
+        // removing causes issues that lead to OOM/overflow due to stdlib bug
+        // https://github.com/ziglang/zig/pull/7472
+        //_ = self.len_map.remove(memory);
     }
 };
 
@@ -186,7 +201,7 @@ fn vkInit(vkAllocator: *VkAllocator) anyerror!c.VkInstance {
         .pApplicationInfo = &vkApplicationInfo,
         .enabledLayerCount = 0,
         .ppEnabledLayerNames = null,
-        .enabledExtensionCount = 1,
+        .enabledExtensionCount = extensionNames.len,
         .ppEnabledExtensionNames = &extensionNames,
     };
 
