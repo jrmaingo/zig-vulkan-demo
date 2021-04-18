@@ -152,6 +152,13 @@ const MyError = error{
     UnknownVk,
 };
 
+fn vkCheck(result: c.VkResult, msg: []const u8) anyerror!void {
+    if (result != c.VkResult.VK_SUCCESS) {
+        std.log.err("{}: {}", .{ msg, result });
+        return MyError.UnknownVk;
+    }
+}
+
 fn vkInit(vkAllocator: *VkAllocator) anyerror!c.VkInstance {
     const vkApplicationInfo = c.VkApplicationInfo{
         .sType = c.VkStructureType.VK_STRUCTURE_TYPE_APPLICATION_INFO,
@@ -182,12 +189,8 @@ fn vkInit(vkAllocator: *VkAllocator) anyerror!c.VkInstance {
     const vkAllocationCallbacks = vkAllocator.getCallbacks();
     var vkInstance: c.VkInstance = undefined;
     const res = c.vkCreateInstance(&vkInstanceCreateInfo, &vkAllocationCallbacks, &vkInstance);
-    if (res != c.VkResult.VK_SUCCESS) {
-        std.log.err("init failed! {}", .{res});
-        return MyError.UnknownVk;
-    } else {
-        return vkInstance;
-    }
+    try vkCheck(res, "init failed!");
+    return vkInstance;
 }
 
 fn vkMessengerCallback(messageSeverity: c.VkDebugUtilsMessageSeverityFlagBitsEXT, messageType: c.VkDebugUtilsMessageTypeFlagsEXT, pCallbackData: ?*const c.VkDebugUtilsMessengerCallbackDataEXT, pUserData: ?*c_void) callconv(.C) c.VkBool32 {
@@ -228,10 +231,7 @@ fn vkLogInit(vkInstance: *c.VkInstance, vkAllocator: *VkAllocator) anyerror!c.Vk
     const vkAllocationCallbacks = vkAllocator.getCallbacks();
     var messenger: c.VkDebugUtilsMessengerEXT = null;
     const res = createMessenger(vkInstance.*, &createInfo, &vkAllocationCallbacks, &messenger);
-    if (res != c.VkResult.VK_SUCCESS) {
-        return MyError.UnknownVk;
-    }
-
+    try vkCheck(res, "failed to create debug messenger");
     return messenger;
 }
 
