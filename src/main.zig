@@ -25,6 +25,10 @@ const VkAllocator = struct {
         };
     }
 
+    fn deinit(self: *VkAllocator) void {
+        self.len_map.deinit();
+    }
+
     fn getCallbacks(self: *VkAllocator) c.VkAllocationCallbacks {
         return c.VkAllocationCallbacks{
             .pUserData = self,
@@ -236,24 +240,10 @@ fn vkLogInit(vkInstance: *c.VkInstance, vkAllocator: *VkAllocator) anyerror!c.Vk
 }
 
 pub fn main() anyerror!void {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
+    var arenaAllocator = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arenaAllocator.deinit();
 
-    vkPrintVersion();
-
-    var vkAllocator = VkAllocator.init(&arena.allocator);
-    const vkAllocationCallbacks = vkAllocator.getCallbacks();
-    var vkInstance = try vkInit(&vkAllocator);
-    defer c.vkDestroyInstance(vkInstance, &vkAllocationCallbacks);
-
-    var vkMessenger = try vkLogInit(&vkInstance, &vkAllocator);
-    defer {
-        const procAddr = c.vkGetInstanceProcAddr(vkInstance, "vkDestroyDebugUtilsMessengerEXT");
-        const destroyMessenger = @ptrCast(c.PFN_vkDestroyDebugUtilsMessengerEXT, procAddr).?;
-        destroyMessenger(vkInstance, vkMessenger, &vkAllocationCallbacks);
-    }
-
-    var engine = try VulkanEngine.create();
+    var engine = try VulkanEngine.create(&arenaAllocator.allocator);
     defer engine.cleanup();
 
     return engine.run();
@@ -261,22 +251,58 @@ pub fn main() anyerror!void {
 
 const VulkanEngine = struct {
     window: *c.SDL_Window,
+    vkAllocator: VkAllocator,
+    vkInstance: c.VkInstance,
+    vkMessenger: c.VkDebugUtilsMessengerEXT,
 
-    fn create() anyerror!VulkanEngine {
+    fn create(allocator: *std.mem.Allocator) anyerror!VulkanEngine {
         var res_int = c.SDL_Init(c.SDL_INIT_VIDEO);
         if (res_int != 0) {
             return MyError.UnknownSDL;
         }
         var window = c.SDL_CreateWindow("vulkan-zig-demo", c.SDL_WINDOWPOS_CENTERED, c.SDL_WINDOWPOS_CENTERED, 1280, 720, c.SDL_WINDOW_VULKAN);
-        if (window) |justWindow| {
-            return VulkanEngine{ .window = justWindow };
-        } else {
+        if (window == null) {
             return MyError.UnknownSDL;
         }
+        errdefer c.SDL_DestroyWindow(window);
+
+        vkPrintVersion();
+
+        var vkAllocator = VkAllocator.init(allocator);
+        errdefer vkAllocator.deinit();
+
+        const vkAllocationCallbacks = vkAllocator.getCallbacks();
+
+        var vkInstance = try vkInit(&vkAllocator);
+        errdefer c.vkDestroyInstance(vkInstance, &vkAllocationCallbacks);
+
+        var vkMessenger = try vkLogInit(&vkInstance, &vkAllocator);
+        errdefer {
+            const procAddr = c.vkGetInstanceProcAddr(vkInstance, "vkDestroyDebugUtilsMessengerEXT");
+            const destroyMessenger = @ptrCast(c.PFN_vkDestroyDebugUtilsMessengerEXT, procAddr).?;
+            destroyMessenger(vkInstance, vkMessenger, &vkAllocationCallbacks);
+        }
+
+        return VulkanEngine{
+            .window = window.?,
+            .vkAllocator = vkAllocator,
+            .vkInstance = vkInstance,
+            .vkMessenger = vkMessenger,
+        };
     }
 
     fn cleanup(self: *VulkanEngine) void {
         c.SDL_DestroyWindow(self.window);
+
+        const vkAllocationCallbacks = self.vkAllocator.getCallbacks();
+
+        const procAddr = c.vkGetInstanceProcAddr(self.vkInstance, "vkDestroyDebugUtilsMessengerEXT");
+        const destroyMessenger = @ptrCast(c.PFN_vkDestroyDebugUtilsMessengerEXT, procAddr).?;
+        destroyMessenger(self.vkInstance, self.vkMessenger, &vkAllocationCallbacks);
+
+        c.vkDestroyInstance(self.vkInstance, &vkAllocationCallbacks);
+
+        self.vkAllocator.deinit();
     }
 
     fn draw() void {
