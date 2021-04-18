@@ -253,36 +253,53 @@ pub fn main() anyerror!void {
         destroyMessenger(vkInstance, vkMessenger, &vkAllocationCallbacks);
     }
 
-    var res_int = c.SDL_Init(c.SDL_INIT_VIDEO);
-    if (res_int != 0) {
-        return MyError.UnknownSDL;
-    }
-    var window = c.SDL_CreateWindow("vulkan-zig-demo", c.SDL_WINDOWPOS_CENTERED, c.SDL_WINDOWPOS_CENTERED, 1280, 720, c.SDL_WINDOW_VULKAN);
-    defer c.SDL_DestroyWindow(window);
+    var engine = try VulkanEngine.create();
+    defer engine.cleanup();
 
-    return mainLoop();
+    return engine.run();
 }
 
-fn draw() void {
-    // TODO
-}
+const VulkanEngine = struct {
+    window: *c.SDL_Window,
 
-fn mainLoop() anyerror!void {
-    while (true) {
-        var event: c.SDL_Event = undefined;
-        if (c.SDL_PollEvent(&event) == 1) {
-            switch (event.type) {
-                c.SDL_QUIT => return,
-                else => {
-                    // std.log.info("unhandled event type {}", .{event.type});
-                    continue;
-                },
-            }
+    fn create() anyerror!VulkanEngine {
+        var res_int = c.SDL_Init(c.SDL_INIT_VIDEO);
+        if (res_int != 0) {
+            return MyError.UnknownSDL;
         }
-
-        draw();
+        var window = c.SDL_CreateWindow("vulkan-zig-demo", c.SDL_WINDOWPOS_CENTERED, c.SDL_WINDOWPOS_CENTERED, 1280, 720, c.SDL_WINDOW_VULKAN);
+        if (window) |justWindow| {
+            return VulkanEngine{ .window = justWindow };
+        } else {
+            return MyError.UnknownSDL;
+        }
     }
-}
+
+    fn cleanup(self: *VulkanEngine) void {
+        c.SDL_DestroyWindow(self.window);
+    }
+
+    fn draw() void {
+        // TODO
+    }
+
+    fn run(self: *VulkanEngine) anyerror!void {
+        while (true) {
+            var event: c.SDL_Event = undefined;
+            if (c.SDL_PollEvent(&event) == 1) {
+                switch (event.type) {
+                    c.SDL_QUIT => return,
+                    else => {
+                        // std.log.info("unhandled event type {}", .{event.type});
+                        continue;
+                    },
+                }
+            }
+
+            draw();
+        }
+    }
+};
 
 test "allocate, realloc and free" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
